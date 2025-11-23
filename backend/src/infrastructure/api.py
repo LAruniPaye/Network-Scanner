@@ -11,6 +11,19 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 src_dir = os.path.dirname(current_dir)
 if src_dir not in sys.path:
     sys.path.insert(0, src_dir)
+    
+    
+#modificamos
+scan_progress = {
+    "arp_icmp": "pendiente",
+    "syn": "pendiente",
+    "os": "pendiente",
+    "services": "pendiente",
+    "nse": "pendiente"
+}
+
+live_hosts = []
+##
 
 from application.services import NetworkScanService
 from infrastructure.nmap_adapter import NmapAdapter
@@ -173,6 +186,71 @@ def scan_wireless(request: WirelessScanRequest):
                 ]
             }
         }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+## nuevos endpoint arp , syn
+@app.get("/api/scan/premium/status")
+def scan_premium_status():
+    return {
+        "success": True,
+        "progress": scan_progress,
+        "live_hosts": live_hosts
+    }
+    
+@app.post("/api/scan/premium")
+def scan_premium(request: ScanRequest):
+    global live_hosts
+    live_hosts = []
+
+    try:
+        # Resetear progreso
+        for k in scan_progress:
+            scan_progress[k] = "pendiente"
+
+        # 1. ARP/ICMP -------------------------------------
+        scan_progress["arp_icmp"] = "ejecutando"
+        arp_result = scan_service.execute_network_scan(request.network_range, "arp_icmp")
+        live_hosts.extend([{"ip": h.ip, "hostname": h.hostname, "state": h.state, "os": h.os} for h in arp_result.hosts])
+        scan_progress["arp_icmp"] = "completado"
+
+        # 2. SYN Scan -------------------------------------
+        scan_progress["syn"] = "ejecutando"
+        syn_result = scan_service.execute_network_scan(request.network_range, "syn_scan")
+        live_hosts.extend([{"ip": h.ip, "ports": len(h.ports), "os": h.os} for h in syn_result.hosts])
+        scan_progress["syn"] = "completado"
+
+        # 3. OS Scan --------------------------------------
+        scan_progress["os"] = "ejecutando"
+        os_result = scan_service.execute_network_scan(request.network_range, "os_scan")
+        scan_progress["os"] = "completado"
+
+        # 4. Services -------------------------------------
+        scan_progress["services"] = "ejecutando"
+        services_result = scan_service.execute_network_scan(request.network_range, "services")
+        scan_progress["services"] = "completado"
+
+        # 5. NSE Scripts ----------------------------------
+        scan_progress["nse"] = "ejecutando"
+        nse_result = scan_service.execute_network_scan(request.network_range, "nse")
+        scan_progress["nse"] = "completado"
+
+
+        # ------------------ Devuelve todo ------------------
+        return {
+            "success": True,
+            "data": {
+                "arp_icmp": arp_result,
+                "syn": syn_result,
+                "os": os_result,
+                "services": services_result,
+                "nse": nse_result,
+                "live_hosts_total": live_hosts
+            }
+        }
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

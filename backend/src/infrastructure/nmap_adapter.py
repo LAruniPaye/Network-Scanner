@@ -39,7 +39,17 @@ class NmapAdapter(NetworkScannerPort):
             "quick": "-sn",
             "standard": "-sV -sC",
             "deep": "-sV -sC -O -A",
-        }
+            
+            
+            
+            ##modificamos           
+            "arp_icmp": "-PR -PE -PP -PM -sn",
+            "syn_scan": "-sS --top-ports 200",
+            "os_scan": "-O",
+            "services": "-sV",
+            "nse": "-sC --script vuln"        
+            }
+        
         
         args = scan_args.get(scan_type, "-sn")
         
