@@ -1,6 +1,8 @@
 ﻿import React, { useEffect, useMemo, useState } from 'react';
 import { Wifi, Search, Activity, Server, Shield, Clock, Globe, BookOpen, FileCode, Map, BarChart3, PlayCircle, Cpu, Terminal, GitCompare, Radar, Download } from 'lucide-react';
 import D3NetworkTopology from './D3NetworkTopology';
+////modificamos
+import { Home } from "lucide-react";
 
 export default function NetworkScanner() {
   const [networkRange, setNetworkRange] = useState('192.168.1.0/24');
@@ -23,6 +25,52 @@ export default function NetworkScanner() {
   const [wirelessScanLoading, setWirelessScanLoading] = useState(false);
   const [wirelessScanError, setWirelessScanError] = useState(null);
 
+  //modificamos
+  const [loading2, setLoading2] = useState(false);
+  const [scanResults, setScanResults] = useState({});
+  const scanTypes = ["quick", "standard", "deep"];
+
+
+  
+
+  ///escaneo en vivo
+  const [premiumProgress, setPremiumProgress] = useState({
+    arp_icmp: 'pendiente',
+    syn: 'pendiente',
+    os: 'pendiente',
+    services: 'pendiente',
+    nse: 'pendiente'
+  });
+
+  const [liveHosts, setLiveHosts] = useState([]);
+  const [premiumRunning, setPremiumRunning] = useState(false);
+  const [premiumPercent, setPremiumPercent] = useState(0);
+
+  const decoratedEvents = useMemo(() => {
+    const eventDefinitions = [
+        { id: 'arp_icmp', title: '1. Descubrimiento Básico', detail: 'Sondeo ARP/ICMP para identificar hosts activos. (Nivel 1)' },
+        { id: 'syn', title: '2. Sondeo SYN (Stealth)', detail: 'Escaneo de puertos "Stealth" para un mapeo rápido de puertos abiertos. (Nivel 2)' },
+        { id: 'os', title: '3. Detección de Sistema Operativo', detail: 'Análisis de huella (fingerprinting) para identificar el SO de los hosts. (Nivel 3)' },
+        { id: 'services', title: '4. Detección de Versiones y Servicios', detail: 'Identificación detallada de software y versiones de los puertos abiertos. (Nivel 4)' },
+        { id: 'nse', title: '5. Ejecución de Scripts (NSE)', detail: 'Ejecución de scripts de seguridad para buscar vulnerabilidades comunes. (Nivel 5)' },
+    ];
+
+    return eventDefinitions.map(def => ({
+        ...def,
+        // Asigna el estado (pendiente, ejecutando, completado) usando el objeto premiumProgress
+        status: premiumProgress[def.id] || 'pendiente', 
+    }));
+  }, [premiumProgress]);
+
+  // ...
+  // (El useEffect de polling y las funciones de escaneo deben usar 
+  // setPremiumProgress y setLiveHosts para actualizar el estado)
+  // ...
+
+
+
+
+
   const API_URL = 'http://localhost:8000';
   const portPosterStats = useMemo(() => buildPortStats(results?.hosts || []), [results]);
   const vulnerabilityFindings = useMemo(() => buildVulnerabilityFindings(results?.hosts || []), [results]);
@@ -44,6 +92,69 @@ export default function NetworkScanner() {
       }
     };
   }, [reportDownloadUrl]);
+
+  ///
+
+
+  // App.jsx (Dentro de la función NetworkScanner)
+
+// ... (Tu useEffect existente de limpieza de URL)
+
+// NUEVO BLOQUE: Lógica de Polling para actualizar el progreso en vivo
+useEffect(() => {
+    let intervalId;
+    
+    // El polling solo se activa cuando el escaneo (premiumRunning) está activo
+    if (premiumRunning) { 
+        intervalId = setInterval(async () => {
+            try {
+                // Llama al endpoint de estado del backend
+                const response = await fetch(`${API_URL}/api/scan/premium/status`);
+                const data = await response.json();
+
+                if (data.success) {
+                    // Actualiza los estados clave
+                    setPremiumProgress(data.progress); 
+                    setLiveHosts(data.live_hosts || []);
+
+                    // CÁLCULO DEL PORCENTAJE:
+                    const stages = ['arp_icmp', 'syn', 'os', 'services', 'nse'];
+                    const completedStages = stages.filter(stage => 
+                        data.progress[stage] === 'completado'
+                    ).length;
+
+                    // 5 etapas * 20% = 100%
+                    const newPercent = Math.min(
+                        100, 
+                        Math.round((completedStages / stages.length) * 100)
+                    );
+                    
+                    setPremiumPercent(newPercent); // Esto mueve la barra
+
+                    // Detiene el polling cuando el escaneo termina
+                    if (newPercent === 100) {
+                        setPremiumRunning(false);
+                        clearInterval(intervalId);
+                    }
+                }
+            } catch (err) {
+                console.error('Error polling premium scan status:', err);
+                setPremiumRunning(false);
+                clearInterval(intervalId);
+            }
+        }, 1500); // Consulta el estado cada 1.5 segundos
+    } 
+    
+    // Función de limpieza para detener el setInterval
+    return () => {
+        if (intervalId) {
+            clearInterval(intervalId);
+        }
+    };
+}, [premiumRunning]); // Dependencia clave: se ejecuta solo al inicio y final del escaneo.
+
+
+
 
   const scanNetwork = async () => {
     setLoading(true);
@@ -88,6 +199,110 @@ export default function NetworkScanner() {
       setLoading(false);
     }
   };
+  ////modificamos
+
+  const scanNetwork2 = async () => {
+    setLoading2(true);
+    setError(null);
+    setSelectedHost(null);
+
+    try {
+      const [response1, response2, response3] = await Promise.all([
+        fetch(`${API_URL}/api/scan/network`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ network_range: networkRange, scan_type: "quick" }),
+        }),
+        fetch(`${API_URL}/api/scan/network`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ network_range: networkRange, scan_type: "standard" }),
+        }),
+        fetch(`${API_URL}/api/scan/network`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ network_range: networkRange, scan_type: "deep" }),
+        }),
+      ]);
+
+      const data1 = await response1.json();
+      const data2 = await response2.json();
+      const data3 = await response3.json();
+
+      if (data1.success && data2.success && data3.success) {
+        setScanResults({
+          quick: data1.data,
+          standard: data2.data,
+          deep: data3.data,
+        });
+      } else {
+        setError("Error en el escaneo");
+      }
+    } catch (err) {
+      setError(`Error de conexión: ${err.message}`);
+    } finally {
+      setLoading2(false);
+    }
+  };
+
+  const protocolEvents = [
+    {
+      id: 'arp',
+      title: 'Descubrimiento ARP/ICMP',
+      key: 'arp_icmp',
+      detail: 'Enviando paquetes ICMP/ARP para identificar hosts despiertos.'
+    },
+    {
+      id: 'syn',
+      title: 'Escaneo SYN selectivo',
+      key: 'syn',
+      detail: 'Sondeando puertos de alto valor para aprender el estado inicial.'
+    },
+    {
+      id: 'os',
+      title: 'Detección de Sistema Operativo',
+      key: 'os',
+      detail: 'Comparando huellas y tiempos para perfilar el sistema.'
+    },
+    {
+      id: 'services',
+      title: 'Enumeración de servicios',
+      key: 'services',
+      detail: 'Recolectando banners y versiones de servicios abiertos.'
+    },
+    {
+      id: 'nse',
+      title: 'Scripts NSE',
+      key: 'nse',
+      detail: 'Ejecutando scripts de seguridad sobre servicios críticos.'
+    }
+  ];
+
+  
+/*comentado
+
+  const decoratedEvents = protocolEvents.map(evt => ({
+    ...evt,
+    status: premiumProgress[evt.key]
+  }));
+*/
+
+  const startPremiumScan = async () => {
+    setPremiumRunning(true);
+    setPremiumPercent(0);
+
+    try {
+      fetch(`${API_URL}/api/scan/premium`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ network_range: networkRange })
+      });
+    } catch (err) {
+      console.log("Error starting premium scan", err);
+    }
+  };
+////
+
 
   const scanHost = async (ip) => {
     try {
@@ -254,7 +469,7 @@ export default function NetworkScanner() {
                 type="text"
                 value={networkRange}
                 onChange={(e) => setNetworkRange(e.target.value)}
-                placeholder="192.168.1.0/24"
+                placeholder="192.168.0.0/24"
                 className="w-full px-4 py-2 bg-slate-700/50 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
@@ -317,7 +532,7 @@ export default function NetworkScanner() {
                 </div>
               </div>
 
-          
+
 
               <div className="bg-gradient-to-br from-purple-500/20 to-purple-600/20 border border-purple-500/30 rounded-xl p-4">
                 <div className="flex items-center justify-between">
@@ -384,11 +599,10 @@ export default function NetworkScanner() {
                             )}
                           </div>
                         </div>
-                        <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                          host.state === 'up' 
-                            ? 'bg-green-500/20 text-green-300 border border-green-500/30' 
-                            : 'bg-red-500/20 text-red-300 border border-red-500/30'
-                        }`}>
+                        <span className={`px-3 py-1 rounded-full text-xs font-semibold ${host.state === 'up'
+                          ? 'bg-green-500/20 text-green-300 border border-green-500/30'
+                          : 'bg-red-500/20 text-red-300 border border-red-500/30'
+                          }`}>
                           {host.state.toUpperCase()}
                         </span>
                       </div>
@@ -488,6 +702,88 @@ export default function NetworkScanner() {
               </div>
             </div>
 
+            {/*EJEMPLO LEONARDO****/}
+            <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl p-6 border border-blue-500/20">
+              <div className="flex items-center justify-between flex-wrap gap-4">
+                <div>
+                  <p className="text-sm text-blue-300 uppercase tracking-wide">En esta sección se muestra una tabla comparativa</p>
+                  <p className="text-slate-400 text-sm">Comparativa visual de los métodos disponibles</p>
+                </div>
+                <div>
+                  <div className="flex items-end">
+                    <button
+                      onClick={scanNetwork2}
+                      disabled={loading2}
+                      className="w-full px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-600 text-white font-semibold rounded-lg transition-all flex items-center justify-center gap-2"
+                    >
+                      {loading2 ? (
+                        <>
+                          <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
+                          Escaneando...
+                        </>
+                      ) : (
+                        <>
+                          <Search className="w-5 h-5" />
+                          Escanear Red
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {scanResults.quick && scanResults.standard && scanResults.deep && (
+                    <div className="mt-6 overflow-x-auto">
+                      <h2 className="text-xl font-bold text-white mb-4">Comparativa de Escaneos</h2>
+
+                      <table className="w-full text-left text-sm text-slate-300 border-collapse min-w-[700px]">
+                        <thead className="text-xs uppercase tracking-wide text-slate-400 bg-slate-800/60">
+                          <tr>
+                            <th className="py-3 px-4">Tipo de Escaneo</th>
+                            <th className="py-3 px-4">Hosts Detectados</th>
+                            <th className="py-3 px-4">Duración (s)</th>
+                            <th className="py-3 px-4">Cobertura</th>
+                            <th className="py-3 px-4">Ruido / Detección</th>
+                            <th className="py-3 px-4">Detecta SO</th>
+                            <th className="py-3 px-4">Servicios Detectados</th>
+                          </tr>
+                        </thead>
+
+                        <tbody>
+                          {scanTypes.map((type) => {
+                            const res = scanResults[type] || {};
+
+                            // Datos técnicos de ejemplo por tipo
+                            const metrics = {
+                              quick: { coverage: "Baja", noise: "Bajo", os: "No", services: "Limitado" },
+                              standard: { coverage: "Media", noise: "Medio", os: "Parcial", services: "Moderado" },
+                              deep: { coverage: "Alta", noise: "Alto", os: "Sí", services: "Extenso" },
+                            };
+
+                            return (
+                              <tr
+                                key={type}
+                                className={`border-t border-slate-700/70 ${type === "standard" ? "bg-slate-800/50" : "bg-slate-900/50"
+                                  }`}
+                              >
+                                <td className="py-3 px-4 font-bold text-white">{type.toUpperCase()}</td>
+                                <td className="py-3 px-4">{res.total_hosts || "—"}</td>
+                                <td className="py-3 px-4">{res.duration ? `${res.duration}s` : "—"}</td>
+                                <td className="py-3 px-4">{metrics[type].coverage}</td>
+                                <td className="py-3 px-4">{metrics[type].noise}</td>
+                                <td className="py-3 px-4">{metrics[type].os}</td>
+                                <td className="py-3 px-4">{metrics[type].services}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+
+
             {/* Visual intelligence suite */}
             <div className="mt-10 space-y-6">
               <ScanTechniqueDiagrams activeType={scanType} />
@@ -500,6 +796,7 @@ export default function NetworkScanner() {
                 <ScanEfficiencyCharts history={scanHistory} />
               </div>
             </div>
+
           </>
         )}
 
@@ -525,7 +822,15 @@ export default function NetworkScanner() {
             </p>
           </div>
 
-          <LiveDemoScanner defaultRange={networkRange} />
+          <LiveDemoScanner
+            networkRange={networkRange}
+            premiumRunning={premiumRunning}
+            premiumPercent={premiumPercent}
+            premiumProgress={premiumProgress}
+            liveHosts={liveHosts}
+            startPremiumScan={startPremiumScan}
+            decoratedEvents={decoratedEvents}            />
+
           <TechniqueComparisonMatrix history={scanHistory} />
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -573,9 +878,10 @@ export default function NetworkScanner() {
           />
         </div>
       </div>
-    </div>
+    </div >
   );
 }
+
 
 function ScanTechniqueDiagrams({ activeType }) {
   return (
@@ -583,7 +889,7 @@ function ScanTechniqueDiagrams({ activeType }) {
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <p className="text-sm text-blue-300 uppercase tracking-wide">Tacticas</p>
-          <h3 className="text-2xl font-bold text-white">Diagramas de tecnicas de escaneo</h3>
+          <h3 className="text-2xl font-bold text-white">Seccion 2</h3>
           <p className="text-slate-400 text-sm">Comparativa visual de los metodos disponibles</p>
         </div>
         <div className="px-4 py-2 bg-slate-700/70 rounded-full text-slate-200 text-sm font-semibold">
@@ -597,11 +903,10 @@ function ScanTechniqueDiagrams({ activeType }) {
           return (
             <div
               key={diagram.id}
-              className={`p-4 rounded-2xl border ${
-                isActive
-                  ? 'border-blue-400/70 bg-blue-500/10 shadow-lg shadow-blue-900/40'
-                  : 'border-slate-600/60 bg-slate-900/20'
-              }`}
+              className={`p-4 rounded-2xl border ${isActive
+                ? 'border-blue-400/70 bg-blue-500/10 shadow-lg shadow-blue-900/40'
+                : 'border-slate-600/60 bg-slate-900/20'
+                }`}
             >
               <div className="flex items-center justify-between gap-3">
                 <div>
@@ -639,7 +944,6 @@ function ScanTechniqueDiagrams({ activeType }) {
     </div>
   );
 }
-
 function NmapOutputExamples() {
   return (
     <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl p-6 border border-blue-500/20">
@@ -664,7 +968,7 @@ function NmapOutputExamples() {
               </span>
             </div>
             <pre className="bg-black/40 text-lime-300 text-xs rounded-lg p-3 overflow-x-auto shadow-inner shadow-black/40">
-{example.output}
+              {example.output}
             </pre>
             <ul className="mt-3 space-y-1 text-xs text-slate-300">
               {example.annotations.map((note, idx) => (
@@ -712,15 +1016,14 @@ function AutoTopologyMapPreview({ hosts = [], networkRange }) {
             <div className="flex items-center justify-between gap-2">
               <p className="text-white font-semibold">{cluster.title}</p>
               <span
-                className={`text-[10px] uppercase tracking-wide px-2 py-1 rounded-full border ${
-                  cluster.accent === 'blue'
-                    ? 'border-blue-400 text-blue-300'
-                    : cluster.accent === 'green'
+                className={`text-[10px] uppercase tracking-wide px-2 py-1 rounded-full border ${cluster.accent === 'blue'
+                  ? 'border-blue-400 text-blue-300'
+                  : cluster.accent === 'green'
                     ? 'border-green-400 text-green-300'
                     : cluster.accent === 'orange'
-                    ? 'border-orange-400 text-orange-300'
-                    : 'border-slate-500 text-slate-200'
-                }`}
+                      ? 'border-orange-400 text-orange-300'
+                      : 'border-slate-500 text-slate-200'
+                  }`}
               >
                 {cluster.nodes.length} nodos
               </span>
@@ -730,11 +1033,10 @@ function AutoTopologyMapPreview({ hosts = [], networkRange }) {
               {cluster.nodes.slice(0, 8).map((node) => (
                 <span
                   key={`${cluster.id}-${node.ip}`}
-                  className={`px-3 py-1 rounded-full text-xs font-mono border ${
-                    node.state === 'up'
-                      ? 'border-green-400 text-green-200'
-                      : 'border-slate-500 text-slate-200'
-                  }`}
+                  className={`px-3 py-1 rounded-full text-xs font-mono border ${node.state === 'up'
+                    ? 'border-green-400 text-green-200'
+                    : 'border-slate-500 text-slate-200'
+                    }`}
                 >
                   {node.ip}
                 </span>
@@ -834,12 +1136,12 @@ function ScanEfficiencyCharts({ history }) {
   const maxDuration = chartData.reduce((max, item) => Math.max(max, item.duration), 0) || 1;
   const polylinePoints = chartData.length
     ? chartData
-        .map((entry, index) => {
-          const x = (index / Math.max(chartData.length - 1, 1)) * 100;
-          const y = 100 - entry.ratio * 100;
-          return `${x},${y}`;
-        })
-        .join(' ')
+      .map((entry, index) => {
+        const x = (index / Math.max(chartData.length - 1, 1)) * 100;
+        const y = 100 - entry.ratio * 100;
+        return `${x},${y}`;
+      })
+      .join(' ')
     : '';
 
   return (
@@ -929,124 +1231,84 @@ function ScanEfficiencyCharts({ history }) {
   );
 }
 
-function LiveDemoScanner({ defaultRange }) {
-  const [demoRunning, setDemoRunning] = useState(false);
-  const [demoStep, setDemoStep] = useState(0);
-
-  useEffect(() => {
-    if (!demoRunning) {
-      return;
-    }
-    if (demoStep >= DEMO_SCAN_EVENTS.length) {
-      setDemoRunning(false);
-      return;
-    }
-    const timer = setTimeout(() => {
-      setDemoStep((prev) => prev + 1);
-    }, 1100);
-    return () => clearTimeout(timer);
-  }, [demoRunning, demoStep]);
-
-  const startDemo = () => {
-    setDemoStep(0);
-    setDemoRunning(true);
-  };
-
-  const resetDemo = () => {
-    setDemoRunning(false);
-    setDemoStep(0);
-  };
-
-  const progress = Math.min(demoStep / DEMO_SCAN_EVENTS.length, 1);
-  const decoratedEvents = DEMO_SCAN_EVENTS.map((event, idx) => {
-    let status = 'pending';
-    if (demoStep > idx) {
-      status = 'done';
-    } else if (demoStep === idx && demoRunning) {
-      status = 'running';
-    }
-    if (!demoRunning && demoStep >= DEMO_SCAN_EVENTS.length) {
-      status = 'done';
-    }
-    return { ...event, status };
-  });
-
-  const liveHosts = DEMO_LIVE_HOSTS.filter((host) => demoStep >= host.step);
-
+function LiveDemoScanner({
+  networkRange,
+  premiumRunning,
+  premiumPercent,
+  premiumProgress,
+  liveHosts,
+  startPremiumScan,
+  decoratedEvents  // <-- Ahora lo recibimos
+}) {
   return (
     <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl p-6 border border-emerald-400/20">
+      {/* Header */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h3 className="text-2xl font-bold text-white flex items-center gap-2">
             <PlayCircle className="w-6 h-6 text-emerald-300" />
-            Escaneo en vivo de demostracion
+            Escaneo Premium en vivo
           </h3>
           <p className="text-slate-400 text-sm mt-1">
-            Simula una corrida completa sin tocar la red. Sigue eventos, hosts descubrimos y progreso.
+            Observa la ejecución completa protocolo por protocolo con feed en tiempo real.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={startDemo}
-            disabled={demoRunning}
-            className="px-4 py-2 rounded-lg text-white font-semibold bg-emerald-600 disabled:bg-slate-600 transition-all"
-          >
-            Iniciar demo
-          </button>
-          <button
-            onClick={resetDemo}
-            className="px-4 py-2 rounded-lg text-slate-200 border border-slate-600 hover:border-emerald-400 transition-all"
-          >
-            Reiniciar
-          </button>
-        </div>
+
+        <button
+          onClick={startPremiumScan}
+          disabled={premiumRunning}
+          className="px-4 py-2 rounded-lg text-white font-semibold bg-emerald-600 disabled:bg-slate-600 transition-all"
+        >
+          Iniciar escaneo Premium
+        </button>
       </div>
 
+      {/* Barra de progreso */}
       <div className="mt-4">
         <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
-          <span>Rango simulado: {defaultRange}</span>
-          <span>
-            {Math.min(progress * 100, 100).toFixed(0)}% completado ·{' '}
-            {demoRunning ? 'Recoleccion en curso' : 'Detenido'}
-          </span>
+          <span>Rango: {networkRange}</span>
+          <span>{premiumPercent.toFixed(0)}% completado</span>
         </div>
+
         <div className="h-3 bg-slate-700 rounded-full overflow-hidden">
           <div
             className="h-full bg-gradient-to-r from-emerald-400 to-emerald-200 transition-all duration-700"
-            style={{ width: `${Math.min(progress * 100, 100)}%` }}
+            style={{ width: `${premiumPercent}%` }}
           ></div>
         </div>
       </div>
 
+      {/* Estados y feed */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mt-6">
+        {/* Estados por protocolo */}
         <div className="space-y-3">
-          {decoratedEvents.map((event) => (
+          {decoratedEvents.map(event => (
             <div
               key={event.id}
               className={`p-3 rounded-xl border ${
-                event.status === 'running'
+                event.status === 'ejecutando'
                   ? 'border-emerald-400 bg-emerald-500/10'
-                  : event.status === 'done'
-                  ? 'border-slate-600 bg-slate-800/60'
-                  : 'border-slate-700 bg-slate-900/30'
+                  : event.status === 'completado'
+                    ? 'border-slate-600 bg-slate-800/60'
+                    : 'border-slate-700 bg-slate-900/30'
               }`}
             >
               <div className="flex items-center justify-between text-sm text-white">
                 <span className="font-semibold">{event.title}</span>
                 <span
                   className={`text-xs uppercase tracking-wide ${
-                    event.status === 'running'
+                    event.status === 'ejecutando'
                       ? 'text-emerald-300'
-                      : event.status === 'done'
-                      ? 'text-slate-400'
-                      : 'text-slate-500'
+                      : event.status === 'completado'
+                        ? 'text-slate-400'
+                        : 'text-slate-500'
                   }`}
                 >
-                  {event.status === 'running'
+                  {event.status === 'ejecutando'
                     ? 'Ejecutando'
-                    : event.status === 'done'
-                    ? 'Listo'
-                    : 'Pendiente'}
+                    : event.status === 'completado'
+                      ? 'Listo'
+                      : 'Pendiente'}
                 </span>
               </div>
               <p className="text-slate-400 text-xs mt-1">{event.detail}</p>
@@ -1054,24 +1316,26 @@ function LiveDemoScanner({ defaultRange }) {
           ))}
         </div>
 
+        {/* Feed */}
         <div className="bg-slate-900/40 border border-slate-700 rounded-2xl p-4">
-          <p className="text-sm text-slate-400 mb-3 uppercase tracking-wide">Feed en tiempo real</p>
+          <p className="text-sm text-slate-400 mb-3 uppercase tracking-wide">
+            Feed en tiempo real
+          </p>
           <div className="space-y-3 max-h-[240px] overflow-y-auto pr-1">
             {liveHosts.length ? (
-              liveHosts.map((host) => (
-                <div key={host.ip} className="p-3 rounded-xl bg-slate-800/70 border border-slate-700">
+              liveHosts.map((host, i) => (
+                <div key={i} className="p-3 rounded-xl bg-slate-800/70 border border-slate-700">
                   <div className="flex items-center justify-between">
                     <p className="text-white font-semibold">{host.ip}</p>
-                    <span className="text-xs text-emerald-300">{host.role}</span>
+                    <span className="text-xs text-emerald-300">Detectado</span>
                   </div>
-                  <p className="text-slate-400 text-xs mt-1">{host.summary}</p>
-                  <div className="text-xs text-slate-500 font-mono mt-2">
-                    {host.os} · {host.ports} puertos · {host.time}s
-                  </div>
+                  <p className="text-slate-400 text-xs mt-1">
+                    {host.os || 'SO desconocido'} · {host.ports || 0} puertos
+                  </p>
                 </div>
               ))
             ) : (
-              <p className="text-slate-500 text-sm">Inicia la demo para recibir eventos y hosts detectados.</p>
+              <p className="text-slate-500 text-sm">Inicia el escaneo Premium…</p>
             )}
           </div>
         </div>
@@ -1233,7 +1497,7 @@ function NseScriptExplainer() {
             </div>
             <p className="text-slate-400 text-sm mt-2">{script.description}</p>
             <pre className="mt-3 bg-black/60 text-lime-300 text-xs rounded-lg p-3 overflow-x-auto">
-{script.command}
+              {script.command}
             </pre>
             <ul className="mt-3 space-y-1 text-xs text-slate-300">
               {script.notes.map((note, idx) => (
@@ -1286,11 +1550,10 @@ function HostDiscoveryPanel({
               key={option.id}
               type="button"
               onClick={() => onTechniqueChange(option.id)}
-              className={`p-4 rounded-2xl text-left border transition-all ${
-                isActive
-                  ? 'border-teal-400 bg-teal-500/10 shadow-lg shadow-teal-900/30'
-                  : 'border-slate-700 bg-slate-900/20 hover:border-teal-300/40'
-              }`}
+              className={`p-4 rounded-2xl text-left border transition-all ${isActive
+                ? 'border-teal-400 bg-teal-500/10 shadow-lg shadow-teal-900/30'
+                : 'border-slate-700 bg-slate-900/20 hover:border-teal-300/40'
+                }`}
             >
               <p className="text-white font-semibold">{option.title}</p>
               <p className="text-slate-400 text-sm mt-1">{option.description}</p>
@@ -1509,11 +1772,10 @@ function DocumentationWorkspace({
                 <button
                   key={format}
                   onClick={() => onFormatChange(format)}
-                  className={`flex-1 px-3 py-1 rounded-lg text-sm ${
-                    reportFormat === format
-                      ? 'bg-emerald-600 text-white'
-                      : 'bg-slate-700 text-slate-200 hover:bg-slate-600'
-                  }`}
+                  className={`flex-1 px-3 py-1 rounded-lg text-sm ${reportFormat === format
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-slate-700 text-slate-200 hover:bg-slate-600'
+                    }`}
                   type="button"
                 >
                   {format.toUpperCase()}
@@ -2319,12 +2581,12 @@ function buildReportPayload({ networkRange, results, discoveredHosts, history })
     },
     scan_summary: results
       ? {
-          scan_id: results.scan_id,
-          total_hosts: results.total_hosts,
-          active_hosts: results.active_hosts,
-          duration: results.duration,
-          hosts: results.hosts,
-        }
+        scan_id: results.scan_id,
+        total_hosts: results.total_hosts,
+        active_hosts: results.active_hosts,
+        duration: results.duration,
+        hosts: results.hosts,
+      }
       : null,
     history,
   };
